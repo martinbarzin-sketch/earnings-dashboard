@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Earnings Vol Screener</title>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial; background: #0f172a; color: #e2e8f0; padding: 20px; }
+    h1 { color: #38bdf8; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #334155; padding: 12px; text-align: left; }
+    th { background: #1e293b; }
+    .sell { background: #14532d; }  /* Green = sell premium */
+    .buy { background: #7f1d1d; }   /* Red = buy straddle */
+    .skip { background: #374151; }  /* Gray = skip */
+    button { background: #38bdf8; color: #0f172a; border: none; padding: 10px 20px; 
+             border-radius: 6px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #0ea5e9; }
+    #status { margin-top: 10px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <h1>Next Week Earnings Vol Screener</h1>
+  <button onclick="load()">🔄 Refresh Data</button>
+  <div id="status">Click refresh to load...</div>
+  <table id="table" style="display:none">
+    <thead>
+      <tr>
+        <th>Ticker</th><th>EPS Est</th><th>Implied Move</th>
+        <th>IV Rank</th><th>Net Flow</th><th>Signal</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+<script>
+async function load() {
+  document.getElementById('status').innerText = 'Loading from APIs...';
+  document.getElementById('table').style.display = 'none';
+  
+  try {
+    const res = await fetch('/api/earnings');
+    const data = await res.json();
+    
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
+    
+    data.forEach(row => {
+      let signal = 'SKIP';
+      let className = 'skip';
+      
+      // Same logic we used for BURL/DLTR
+      if (row.iv_rank > 90 && row.implied_move > row.avg_move * 1.5) {
+        signal = 'SELL PREMIUM';
+        className = 'sell';
+      } else if (row.iv_rank < 30) {
+        signal = 'BUY STRADDLE';
+        className = 'buy';
+      }
+      
+      tbody.innerHTML += `
+        <tr class="${className}">
+          <td><b>${row.ticker}</b></td>
+          <td>${row.eps_est || '-'}</td>
+          <td>${row.implied_move?.toFixed(1)}%</td>
+          <td>${row.iv_rank?.toFixed(0)}%</td>
+          <td>$${(row.net_flow/1e6).toFixed(1)}M</td>
+          <td><b>${signal}</b></td>
+        </tr>`;
+    });
+    
+    document.getElementById('table').style.display = 'table';
+    document.getElementById('status').innerText = `Updated: ${new Date().toLocaleTimeString()}`;
+  } catch (e) {
+    document.getElementById('status').innerText = 'Error: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>
