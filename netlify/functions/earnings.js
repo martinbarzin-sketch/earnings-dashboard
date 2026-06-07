@@ -2,7 +2,7 @@ const axios = require('axios');
 
 exports.handler = async (event) => {
   try {
-    // 1. Calculate next week's Monday-Friday for earnings
+    // 1. Calculate next week's Monday-Friday
     const today = new Date();
     const nextMonday = new Date(today);
     nextMonday.setDate(today.getDate() + (8 - today.getDay()) % 7);
@@ -12,51 +12,57 @@ exports.handler = async (event) => {
     const from = nextMonday.toISOString().split('T')[0];
     const to = nextFriday.toISOString().split('T')[0];
 
-    // 2. FMP - NEW STABLE ENDPOINT - no more v3
+    // 2. FMP - Get earnings, FILTER FOR US ONLY
     const fmpUrl = `https://financialmodelingprep.com/stable/earnings-calendar?from=${from}&to=${to}&apikey=${process.env.FMP_KEY}`;
     const fmpRes = await axios.get(fmpUrl);
-    const earnings = fmpRes.data || [];
-
-    // 3. For each ticker, get ORATS + TRADIR data
-    const results = [];
     
-    // Limit to 8 tickers so we don't timeout on Netlify free tier
-    for (const item of earnings.slice(0, 8)) {
+    // Filter: US tickers only - no.T,.TO,.L,.PA etc, and exclude OTC: no 5-letter tickers ending in F,Y,Z
+    const usEarnings = fmpRes.data.filter(item => {
+      const symbol = item.symbol;
+      const isUS =!symbol.includes('.') && symbol.length <= 5;
+      const isNotOTC =!(symbol.length === 5 && /[FYZW]$/i.test(symbol));
+      return isUS && isNotOTC;
+    });
+
+    console.log(`Found ${usEarnings.length} US earnings out of ${fmpRes.data.length} total`);
+
+    // 3. Process each US ticker
+    const results = [];
+    for (const item of usEarnings.slice(0, 8)) {
       const ticker = item.symbol;
+      let implied_move = 0, iv_rank = 0, net_flow = 0;
       
       try {
-        // ORATS call
+        // ORATS - cores data
         const oratsUrl = `https://api.orats.io/datav2/cores.json?ticker=${ticker}&token=${process.env.ORATS_TOKEN}`;
         const oratsRes = await axios.get(oratsUrl);
-        const oratsData = oratsRes.data.data[0] || {};
-
-        // TRADIR call - example, adjust to your endpoint
-        const tradirUrl = `https://api.tradir.com/flow?ticker=${ticker}`;
-        const tradirRes = await axios.get(tradirUrl, {
-          headers: { 'Authorization': `Bearer ${process.env.TRADIR_KEY}` }
-        });
-        
-        results.push({
-          ticker: ticker,
-          date: item.date,
-          eps_est: item.epsEstimated || 0,
-          implied_move: oratsData.impliedMove || 0,
-          iv_rank: oratsData.ivRank || 0,
-          net_flow: tradirRes.data.netFlow || 0
-        });
-        
-      } catch (tickerError) {
-        console.log(`Failed ${ticker}:`, tickerError.message);
-        // Push basic data even if ORATS/TRADIR fails
-        results.push({
-          ticker: ticker,
-          date: item.date,
-          eps_est: item.epsEstimated || 0,
-          implied_move: 0,
-          iv_rank: 0,
-          net_flow: 0
-        });
+        const oratsData = oratsRes.data.data?.[0] || {};
+        implied_move = oratsData.impliedMove || 0;
+        iv_rank = oratsData.ivRank || 0;
+      } catch (e) {
+        console.log(`ORATS failed for ${ticker}:`, e.message);
       }
+
+      try {
+        // TRADIR - adjust this endpoint to your actual one
+        const tradirUrl = `https://api.tradir.com/flow`;
+        const tradirRes = await axios.get(tradirUrl, {
+          headers: { 'Authorization': `Bearer ${process.env.TRADIR_KEY}` },
+          params: { ticker: ticker }
+        });
+        net_flow = tradirRes.data.netFlow || 0;
+      } catch (e) {
+        console.log(`TRADIR failed for ${ticker}:`, e.message);
+      }
+      
+      results.push({
+        ticker: ticker,
+        date: item.date,
+        eps_est: item.epsEstimated || 0,
+        implied_move: parseFloat(implied_move.toFixed(2)),
+        iv_rank: Math.round(iv_rank),
+        net_flow: Math.round(net_flow)
+      });
     }
 
     return {
