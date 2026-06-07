@@ -11,22 +11,37 @@ exports.handler = async (event) => {
     
     const from = nextMonday.toISOString().split('T')[0];
     const to = nextFriday.toISOString().split('T')[0];
+    
+    console.log(`Checking earnings from ${from} to ${to}`);
 
-    // 2. FMP - Get earnings, FILTER FOR US ONLY
+    // 2. FMP - Get earnings, FILTER FOR REAL US STOCKS ONLY
     const fmpUrl = `https://financialmodelingprep.com/stable/earnings-calendar?from=${from}&to=${to}&apikey=${process.env.FMP_KEY}`;
     const fmpRes = await axios.get(fmpUrl);
     
-    // Filter: US tickers only - no.T,.TO,.L,.PA etc, and exclude OTC: no 5-letter tickers ending in F,Y,Z
+    // Strong filter: US only, no OTC, no bankrupt, market cap > 300M
     const usEarnings = fmpRes.data.filter(item => {
       const symbol = item.symbol;
       const isUS =!symbol.includes('.') && symbol.length <= 5;
-      const isNotOTC =!(symbol.length === 5 && /[FYZW]$/i.test(symbol));
-      return isUS && isNotOTC;
+      const isNotOTC =!(symbol.length === 5 && /[FYZWQX]$/i.test(symbol));
+      const isNotBankrupt =!symbol.endsWith('Q'); // CBKCQ, etc
+      const hasMarketCap = (item.marketCap || 0) > 300000000; // 300M+ only
+      return isUS && isNotOTC && isNotBankrupt && hasMarketCap;
     });
 
-    console.log(`Found ${usEarnings.length} US earnings out of ${fmpRes.data.length} total`);
+    console.log(`Found ${usEarnings.length} real US earnings out of ${fmpRes.data.length} total`);
 
-    // 3. Process each US ticker
+    // 3. TEMP TEST - Check if ORATS is working
+    try {
+      const testOrats = await axios.get(`https://api.orats.io/datav2/cores.json?ticker=GME&token=${process.env.ORATS_TOKEN}`);
+      console.log('ORATS TEST - GME data:', {
+        impliedMove: testOrats.data.data[0]?.impliedMove,
+        ivRank: testOrats.data.data[0]?.ivRank
+      });
+    } catch(e) {
+      console.log('ORATS TEST FAILED:', e.response?.status, e.message);
+    }
+
+    // 4. Process each real US ticker
     const results = [];
     for (const item of usEarnings.slice(0, 8)) {
       const ticker = item.symbol;
@@ -40,19 +55,19 @@ exports.handler = async (event) => {
         implied_move = oratsData.impliedMove || 0;
         iv_rank = oratsData.ivRank || 0;
       } catch (e) {
-        console.log(`ORATS failed for ${ticker}:`, e.message);
+        console.log(`ORATS failed for ${ticker}:`, e.response?.status || e.message);
       }
 
       try {
-        // TRADIR - adjust this endpoint to your actual one
-        const tradirUrl = `https://api.tradir.com/flow`;
+        // TRADIR - adjust endpoint if needed
+        const tradirUrl = `https://api.tradir.com/v1/flow`;
         const tradirRes = await axios.get(tradirUrl, {
           headers: { 'Authorization': `Bearer ${process.env.TRADIR_KEY}` },
           params: { ticker: ticker }
         });
-        net_flow = tradirRes.data.netFlow || 0;
+        net_flow = tradirRes.data.netFlow || tradirRes.data.net_flow || 0;
       } catch (e) {
-        console.log(`TRADIR failed for ${ticker}:`, e.message);
+        console.log(`TRADIR failed for ${ticker}:`, e.response?.status || e.message);
       }
       
       results.push({
