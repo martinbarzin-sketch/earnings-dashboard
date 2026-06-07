@@ -6,8 +6,8 @@ exports.handler = async (event) => {
 
   for (let t of tickers) {
     // FMP
-    const fmp = await axios.get(`https://financialmodelingprep.com/api/v3/earnings-surprises/${t}?apikey=${process.env.FMP_KEY}`);
-
+    const fmpUrl = `https://financialmodelingprep.com/stable/earnings-calendar?from=${from}&to=${to}&apikey=${process.env.FMP_KEY}`
+    
     // ORATS
     const orats = await axios.get(`https://api.orats.io/datav2/strikes?token=${process.env.ORATS_TOKEN}&ticker=${t}`);
 
