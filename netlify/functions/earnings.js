@@ -11,11 +11,10 @@ exports.handler = async (event) => {
     
     console.log(`Checking earnings from ${from} to ${to}`);
 
-    // 2. FMP - Get earnings, NO MARKET CAP FILTER - FMP doesn't provide it here
+    // 2. FMP - Get earnings
     const fmpUrl = `https://financialmodelingprep.com/stable/earnings-calendar?from=${from}&to=${to}&apikey=${process.env.FMP_KEY}`;
     const fmpRes = await axios.get(fmpUrl);
     
-    // Filter: US only, no OTC, no bankrupt. Keep all market caps for now.
     const usEarnings = fmpRes.data.filter(item => {
       const symbol = item.symbol;
       const isUS =!symbol.includes('.') && symbol.length <= 5;
@@ -26,33 +25,34 @@ exports.handler = async (event) => {
 
     console.log(`Found ${usEarnings.length} US earnings out of ${fmpRes.data.length} total`);
 
-    // 3. ORATS TEST - with better error logging
+    // 3. ORATS TEST - Using /datav2/live/summaries which you DO have
     try {
-      const testOrats = await axios.get(`https://api.orats.io/datav2/hist/one?token=${process.env.ORATS_TOKEN}&ticker=GME`);
+      const testOrats = await axios.get(`https://api.orats.io/datav2/live/summaries?token=${process.env.ORATS_TOKEN}&ticker=GME`);
       console.log('ORATS TEST SUCCESS - GME data:', {
         ivRank: testOrats.data.data?.[0]?.ivRank,
-        forecastMove: testOrats.data.data?.[0]?.forecastMove
+        forecastMove: testOrats.data.data?.[0]?.forecastMove,
+        implVol: testOrats.data.data?.[0]?.implVol
       });
     } catch(e) {
       console.log('ORATS TEST FAILED:', e.response?.status, e.response?.data || e.message);
     }
 
-    // 4. Process tickers, skip ORATS if it fails
+    // 4. Process tickers using the correct ORATS endpoint
     const results = [];
     const sortedEarnings = usEarnings.sort((a,b) => new Date(a.date) - new Date(b.date));
     
-    for (const item of sortedEarnings.slice(0, 15)) { // Check 15 now
+    for (const item of sortedEarnings.slice(0, 15)) {
       const ticker = item.symbol;
       let implied_move = 0, iv_rank = 0;
       
       try {
-        const oratsUrl = `https://api.orats.io/datav2/hist/one?token=${process.env.ORATS_TOKEN}&ticker=${ticker}`;
+        // ORATS - /datav2/live/summaries is the one in your screenshot
+        const oratsUrl = `https://api.orats.io/datav2/live/summaries?token=${process.env.ORATS_TOKEN}&ticker=${ticker}`;
         const oratsRes = await axios.get(oratsUrl);
         const oratsData = oratsRes.data.data?.[0] || {};
-        implied_move = (oratsData.forecastMove || 0) * 100;
+        implied_move = (oratsData.forecastMove || 0) * 100; // convert decimal to %
         iv_rank = oratsData.ivRank || 0;
       } catch (e) {
-        // ORATS failed, but we still show the ticker
         console.log(`ORATS failed for ${ticker}:`, e.response?.status);
       }
       
@@ -62,7 +62,7 @@ exports.handler = async (event) => {
         eps_est: item.epsEstimated || 0,
         implied_move: parseFloat(implied_move.toFixed(2)),
         iv_rank: Math.round(iv_rank),
-        net_flow: 0 // TRADIR disabled for now
+        net_flow: 0
       });
     }
 
