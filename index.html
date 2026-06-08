@@ -2,20 +2,57 @@
 <html>
 <head>
   <title>Earnings Vol Screener</title>
+  <meta charset="UTF-8">
   <style>
-    body { background: #0f1419; color: #fff; font-family: Arial, sans-serif; padding: 20px; }
-    h1 { color: #4db8ff; }
-    button { background: #4db8ff; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; color: #000; font-weight: bold; }
-    table { width: 100%; margin-top: 20px; border-collapse: collapse; }
-    th { background: #1a2332; padding: 12px; text-align: left; }
-    td { padding: 12px; border-bottom: 1px solid #2a3441; }
-    .empty { text-align: center; padding: 40px; color: #aaa; }
+    body { 
+      background: #0f1419; 
+      color: #fff; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+      padding: 20px; 
+      margin: 0;
+    }
+    h1 { color: #4db8ff; margin-bottom: 20px; }
+    button { 
+      background: #4db8ff; 
+      padding: 10px 20px; 
+      border: none; 
+      border-radius: 5px; 
+      cursor: pointer; 
+      font-size: 14px;
+      color: #000;
+      font-weight: 600;
+    }
+    button:hover { background: #3da8ef; }
+    table { 
+      width: 100%; 
+      margin-top: 20px; 
+      border-collapse: collapse; 
+      background: #1a2332;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th { 
+      background: #1a2332; 
+      padding: 12px; 
+      text-align: left; 
+      font-weight: 600;
+      border-bottom: 2px solid #2a3441;
+    }
+    td { 
+      padding: 12px; 
+      border-bottom: 1px solid #2a3441; 
+    }
+    tr:hover { background: #1e2838; }
+    .signal-buy { color: #4ade80; font-weight: bold; }
+    .signal-sell { color: #f87171; font-weight: bold; }
+    .signal-skip { color: #94a3b8; }
+    .empty { text-align: center; padding: 40px; color: #94a3b8; }
   </style>
 </head>
 <body>
   <h1>Next Week Earnings Vol Screener</h1>
   <button onclick="loadData()">Refresh Data</button>
-  <p>Updated: <span id="updated"></span></p>
+  <p>Updated: <span id="updated">-</span></p>
   
   <table>
     <thead>
@@ -29,45 +66,67 @@
         <th>Signal</th>
       </tr>
     </thead>
-    <tbody id="data-body"></tbody>
+    <tbody id="data-body">
+      <tr>
+        <td colspan="7" class="empty">Loading...</td>
+      </tr>
+    </tbody>
   </table>
 
   <script>
     async function loadData() {
-      const res = await fetch('/api/earnings');
-      const data = await res.json();
-      document.getElementById('updated').textContent = new Date().toLocaleTimeString();
-      
-      const tbody = document.getElementById('data-body');
-      
-      if (data.length === 0) {
-        tbody.innerHTML = `
+      try {
+        const res = await fetch('/api/earnings');
+        const data = await res.json();
+        document.getElementById('updated').textContent = new Date().toLocaleTimeString();
+        
+        const tbody = document.getElementById('data-body');
+        
+        if (data.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="7" class="empty">
+                No liquid options names reporting in next 30 days.<br>
+                Earnings season resumes mid-July.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+        
+        tbody.innerHTML = data.map(item => {
+          let signal = 'SKIP';
+          let signalClass = 'signal-skip';
+          
+          if (item.earnings_move > 3 && item.iv_30d > 40) {
+            signal = 'BUY STRADDLE';
+            signalClass = 'signal-buy';
+          } else if (item.earnings_move < 2) {
+            signal = 'SELL IC';
+            signalClass = 'signal-sell';
+          }
+          
+          return `
+            <tr>
+              <td><strong>${item.ticker}</strong></td>
+              <td>${item.date}</td>
+              <td>${item.eps_est || '-'}</td>
+              <td>${item.implied_move}%</td>
+              <td>${item.iv_30d}%</td>
+              <td>${item.earnings_move}%</td>
+              <td class="${signalClass}"><strong>${signal}</strong></td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        document.getElementById('data-body').innerHTML = `
           <tr>
-            <td colspan="7" class="empty">
-              No liquid options names reporting in next 30 days. Earnings season resumes mid-July.
+            <td colspan="7" class="empty" style="color: #f87171;">
+              Error loading data. Check function logs.
             </td>
           </tr>
         `;
-        return;
       }
-      
-      tbody.innerHTML = data.map(item => {
-        let signal = 'SKIP';
-        if (item.earnings_move > 3 && item.iv_30d > 40) signal = 'BUY STRADDLE';
-        else if (item.earnings_move < 2) signal = 'SELL IC';
-        
-        return `
-          <tr>
-            <td><strong>${item.ticker}</strong></td>
-            <td>${item.date}</td>
-            <td>${item.eps_est || '-'}</td>
-            <td>${item.implied_move}%</td>
-            <td>${item.iv_30d}%</td>
-            <td>${item.earnings_move}%</td>
-            <td><strong>${signal}</strong></td>
-          </tr>
-        `;
-      }).join('');
     }
     
     loadData();
