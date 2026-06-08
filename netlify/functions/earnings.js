@@ -25,33 +25,24 @@ exports.handler = async (event) => {
 
     console.log(`Found ${usEarnings.length} US earnings out of ${fmpRes.data.length} total`);
 
-    // 3. ORATS TEST - Using /datav2/live/summaries which you DO have
-    try {
-      const testOrats = await axios.get(`https://api.orats.io/datav2/live/summaries?token=${process.env.ORATS_TOKEN}&ticker=GME`);
-      console.log('ORATS TEST SUCCESS - GME data:', {
-        ivRank: testOrats.data.data?.[0]?.ivRank,
-        forecastMove: testOrats.data.data?.[0]?.forecastMove,
-        implVol: testOrats.data.data?.[0]?.implVol
-      });
-    } catch(e) {
-      console.log('ORATS TEST FAILED:', e.response?.status, e.response?.data || e.message);
-    }
-
-    // 4. Process tickers using the correct ORATS endpoint
+    // 3. Process tickers with CORRECT ORATS fields
     const results = [];
     const sortedEarnings = usEarnings.sort((a,b) => new Date(a.date) - new Date(b.date));
     
     for (const item of sortedEarnings.slice(0, 15)) {
       const ticker = item.symbol;
-      let implied_move = 0, iv_rank = 0;
+      let implied_move = 0, iv_30d = 0, earnings_move = 0;
       
       try {
-        // ORATS - /datav2/live/summaries is the one in your screenshot
+        // ORATS - /datav2/live/summaries works
         const oratsUrl = `https://api.orats.io/datav2/live/summaries?token=${process.env.ORATS_TOKEN}&ticker=${ticker}`;
         const oratsRes = await axios.get(oratsUrl);
         const oratsData = oratsRes.data.data?.[0] || {};
-        implied_move = (oratsData.forecastMove || 0) * 100; // convert decimal to %
-        iv_rank = oratsData.ivRank || 0;
+        
+        implied_move = (oratsData.impliedMove || 0) * 100; // 0.0517 → 5.17
+        iv_30d = (oratsData.iv30d || 0) * 100; // 0.4455 → 44.55
+        earnings_move = (oratsData.impliedEarningsMove || 0) * 100; // 0.038 → 3.8
+        
       } catch (e) {
         console.log(`ORATS failed for ${ticker}:`, e.response?.status);
       }
@@ -61,7 +52,8 @@ exports.handler = async (event) => {
         date: item.date,
         eps_est: item.epsEstimated || 0,
         implied_move: parseFloat(implied_move.toFixed(2)),
-        iv_rank: Math.round(iv_rank),
+        iv_30d: parseFloat(iv_30d.toFixed(2)), // Using 30D IV instead of IV Rank
+        earnings_move: parseFloat(earnings_move.toFixed(2)), // Better for your DLTR setup
         net_flow: 0
       });
     }
