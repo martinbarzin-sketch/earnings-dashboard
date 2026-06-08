@@ -26,7 +26,7 @@ exports.handler = async (event) => {
     const results = [];
     const sortedEarnings = usEarnings.sort((a,b) => new Date(a.date) - new Date(b.date));
     
-    for (const item of sortedEarnings.slice(0, 30)) { // Check 30 to find liquid ones
+    for (const item of sortedEarnings.slice(0, 30)) {
       const ticker = item.symbol;
       
       try {
@@ -34,31 +34,23 @@ exports.handler = async (event) => {
         const oratsRes = await axios.get(oratsUrl);
         const oratsData = oratsRes.data.data?.[0];
         
-        // SKIP if ORATS has no data for this ticker
-        if (!oratsData ||!oratsData.impliedMove) {
-          console.log(`Skipping ${ticker}: No options data`);
+        // THIS LINE KILLS ALL THE JUNK TICKERS
+        if (!oratsData ||!oratsData.impliedMove || oratsData.impliedMove === 0) {
           continue;
         }
-        
-        const implied_move = (oratsData.impliedMove || 0) * 100;
-        const iv_30d = (oratsData.iv30d || 0) * 100;
-        const earnings_move = (oratsData.impliedEarningsMove || 0) * 100;
-        
-        // SKIP if move is 0 = illiquid
-        if (implied_move === 0) continue;
         
         results.push({
           ticker: ticker,
           date: item.date,
           eps_est: item.epsEstimated || 0,
-          implied_move: parseFloat(implied_move.toFixed(2)),
-          iv_30d: parseFloat(iv_30d.toFixed(2)),
-          earnings_move: parseFloat(earnings_move.toFixed(2)),
+          implied_move: parseFloat((oratsData.impliedMove * 100).toFixed(2)),
+          iv_30d: parseFloat((oratsData.iv30d * 100).toFixed(2)),
+          earnings_move: parseFloat((oratsData.impliedEarningsMove * 100).toFixed(2)),
           net_flow: 0
         });
         
       } catch (e) {
-        console.log(`ORATS failed for ${ticker}:`, e.response?.status);
+        // Skip silently
       }
     }
 
@@ -71,7 +63,6 @@ exports.handler = async (event) => {
     };
     
   } catch (error) {
-    console.log('Function error:', error.message);
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
