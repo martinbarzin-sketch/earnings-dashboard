@@ -1,74 +1,76 @@
-import { useState, useEffect } from 'react';
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Earnings Vol Screener</title>
+  <style>
+    body { background: #0f1419; color: #fff; font-family: Arial, sans-serif; padding: 20px; }
+    h1 { color: #4db8ff; }
+    button { background: #4db8ff; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; color: #000; font-weight: bold; }
+    table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+    th { background: #1a2332; padding: 12px; text-align: left; }
+    td { padding: 12px; border-bottom: 1px solid #2a3441; }
+    .empty { text-align: center; padding: 40px; color: #aaa; }
+  </style>
+</head>
+<body>
+  <h1>Next Week Earnings Vol Screener</h1>
+  <button onclick="loadData()">Refresh Data</button>
+  <p>Updated: <span id="updated"></span></p>
+  
+  <table>
+    <thead>
+      <tr>
+        <th>Ticker</th>
+        <th>Date</th>
+        <th>EPS Est</th>
+        <th>Implied Move</th>
+        <th>30D IV</th>
+        <th>Earnings Move</th>
+        <th>Signal</th>
+      </tr>
+    </thead>
+    <tbody id="data-body"></tbody>
+  </table>
 
-function App() {
-  const [data, setData] = useState([]);
-  const [updated, setUpdated] = useState('');
-
-  const fetchData = async () => {
-    const res = await fetch('/api/earnings');
-    const json = await res.json();
-    setData(json);
-    setUpdated(new Date().toLocaleTimeString());
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const getSignal = (item) => {
-    // DLTR-style long vol setup
-    if (item.earnings_move > 3 && item.iv_30d > 40) return 'BUY STRADDLE';
-    if (item.earnings_move < 2) return 'SELL IC';
-    return 'SKIP';
-  };
-
-  return (
-    <div style={{background: '#0f1419', color: '#fff', minHeight: '100vh', padding: '20px'}}>
-      <h1 style={{color: '#4db8ff'}}>Next Week Earnings Vol Screener</h1>
-      <button 
-        onClick={fetchData} 
-        style={{background: '#4db8ff', padding: '10px 20px', border: 'none', borderRadius: '5px', cursor: 'pointer'}}
-      >
-        Refresh Data
-      </button>
-      <p>Updated: {updated}</p>
+  <script>
+    async function loadData() {
+      const res = await fetch('/api/earnings');
+      const data = await res.json();
+      document.getElementById('updated').textContent = new Date().toLocaleTimeString();
       
-      <table style={{width: '100%', marginTop: '20px', borderCollapse: 'collapse'}}>
-        <thead>
-          <tr style={{background: '#1a2332'}}>
-            <th style={{padding: '12px', textAlign: 'left'}}>Ticker</th>
-            <th style={{padding: '12px', textAlign: 'left'}}>Date</th>
-            <th style={{padding: '12px', textAlign: 'left'}}>EPS Est</th>
-            <th style={{padding: '12px', textAlign: 'left'}}>Implied Move</th>
-            <th style={{padding: '12px', textAlign: 'left'}}>30D IV</th>
-            <th style={{padding: '12px', textAlign: 'left'}}>Earnings Move</th>
-            <th style={{padding: '12px', textAlign: 'left'}}>Signal</th>
+      const tbody = document.getElementById('data-body');
+      
+      if (data.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="empty">
+              No liquid options names reporting in next 30 days. Earnings season resumes mid-July.
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {data.length === 0? (
-            <tr>
-              <td colSpan="7" style={{textAlign: 'center', padding: '40px'}}>
-                No liquid options names reporting in next 30 days. Earnings season resumes mid-July.
-              </td>
-            </tr>
-          ) : (
-            data.map(item => (
-              <tr key={item.ticker} style={{borderBottom: '1px solid #2a3441'}}>
-                <td style={{padding: '12px'}}><strong>{item.ticker}</strong></td>
-                <td style={{padding: '12px'}}>{item.date}</td>
-                <td style={{padding: '12px'}}>{item.eps_est || '-'}</td>
-                <td style={{padding: '12px'}}>{item.implied_move}%</td>
-                <td style={{padding: '12px'}}>{item.iv_30d}%</td>
-                <td style={{padding: '12px'}}>{item.earnings_move}%</td>
-                <td style={{padding: '12px'}}><strong>{getSignal(item)}</strong></td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-export default App;
+        `;
+        return;
+      }
+      
+      tbody.innerHTML = data.map(item => {
+        let signal = 'SKIP';
+        if (item.earnings_move > 3 && item.iv_30d > 40) signal = 'BUY STRADDLE';
+        else if (item.earnings_move < 2) signal = 'SELL IC';
+        
+        return `
+          <tr>
+            <td><strong>${item.ticker}</strong></td>
+            <td>${item.date}</td>
+            <td>${item.eps_est || '-'}</td>
+            <td>${item.implied_move}%</td>
+            <td>${item.iv_30d}%</td>
+            <td>${item.earnings_move}%</td>
+            <td><strong>${signal}</strong></td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    loadData();
+  </script>
+</body>
+</html>
