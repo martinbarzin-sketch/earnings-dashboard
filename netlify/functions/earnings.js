@@ -3,10 +3,10 @@ const axios = require('axios');
 exports.handler = async (event) => {
   try {
     const today = new Date();
-    const from = today.toISOString().split('T')[0];
+    const from = '2026-05-01';
     const thirtyDays = new Date(today);
     thirtyDays.setDate(today.getDate() + 30);
-    const to = thirtyDays.toISOString().split('T')[0];
+    const to = '2026-05-31';
     
     console.log(`Checking earnings from ${from} to ${to}`);
 
